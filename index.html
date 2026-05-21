@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>ジム備品・在庫管理システム</title>
+  <?!= include('style') ?>
+</head>
+<body>
+
+<div class="loader-overlay" id="loader"><div class="spinner"></div><div class="loader-text">読み込み中...</div></div>
+<div class="toast" id="toast"></div>
+
+<div class="modal-overlay" id="modalOverlay" onclick="if(event.target===this)closeModal()">
+  <div class="modal">
+    <div class="modal-header"><span id="modalTitle"></span><button class="close" onclick="closeModal()">&times;</button></div>
+    <div class="modal-body" id="modalBody"></div>
+    <div class="modal-footer"><button class="btn-cancel" onclick="closeModal()">キャンセル</button><button class="btn-ok" onclick="modalOk()">OK</button></div>
+  </div>
+</div>
+
+<!-- ===== スタッフ画面 ===== -->
+<div id="staffScreen" style="display:block">
+  <div class="header">
+    <h1><span class="icon">📦</span> 在庫管理</h1>
+    <button class="btn-admin" onclick="showAdmin()">管理者 ▶</button>
+  </div>
+  <div class="screen-panel">
+    <div class="panel-fixed">
+      <div class="store-selector" style="padding:0 0 6px 0">
+        <select id="storeSelect" onchange="switchStore()"></select>
+      </div>
+      <div class="staff-note" style="padding:4px 0 6px;border:none;background:transparent">※ ±ボタンや直接入力で数量を変更し、上の「保存」ボタンで確定してください。</div>
+      <div class="save-bar">
+        <button class="btn-save" onclick="saveStaffInventory()">💾 在庫を保存</button>
+        <span class="unsaved-warning" id="staffUnsaved" style="display:none">⚠ 保存されていません</span>
+      </div>
+      <div class="changes-box">
+        <div class="changes-box-title">📝 変更箇所</div>
+        <div class="changes-list" id="staffChangesList"><span class="none">変更なし</span></div>
+      </div>
+      <!-- 店舗間移動 -->
+      <div class="transfer-box">
+        <div class="transfer-box-title">🔄 店舗間の在庫移動</div>
+        <div class="transfer-form">
+          <select id="tfFromStore" onchange="updateTransferItems()" style="max-width:110px"></select>
+          <span>➡</span>
+          <select id="tfToStore" style="max-width:110px"></select>
+          <select id="tfItem" style="max-width:130px"><option value="">商品を選択</option></select>
+          <input type="number" id="tfQty" min="1" value="1" style="width:50px">
+          <button class="btn-transfer" onclick="executeTransfer()">移動</button>
+        </div>
+      </div>
+      <div class="cat-tabs" id="staffCatTabs" style="padding:0;margin-top:6px"></div>
+    </div>
+    <div class="panel-scroll" id="itemsContainer"></div>
+  </div>
+</div>
+
+<!-- ===== 管理者画面 ===== -->
+<div id="adminScreen" style="display:none">
+  <div class="header">
+    <h1><span class="icon">⚙️</span> 管理者設定</h1>
+    <button class="btn-admin" onclick="showStaff()">◀ スタッフ画面</button>
+  </div>
+  <div class="admin-tabs">
+    <div class="admin-tab active" data-tab="stores" onclick="switchAdminTab('stores')">🏢 店舗管理</div>
+    <div class="admin-tab" data-tab="categories" onclick="switchAdminTab('categories')">🏷️ カテゴリ管理</div>
+    <div class="admin-tab" data-tab="items" onclick="switchAdminTab('items')">📋 商品マスター</div>
+    <div class="admin-tab" data-tab="defaults" onclick="switchAdminTab('defaults')">📝 デフォルト設定</div>
+    <div class="admin-tab" data-tab="notify" onclick="switchAdminTab('notify')">🔔 通知設定</div>
+    <div class="admin-tab" data-tab="others" onclick="switchAdminTab('others')">⚙️ その他</div>
+  </div>
+
+  <!-- 店舗管理 -->
+  <div class="admin-panel active" id="panel_stores">
+    <div class="panel-fixed"><h3 style="margin:0">🏢 店舗一覧</h3></div>
+    <div class="panel-scroll">
+      <table class="tbl"><thead><tr><th>店舗名</th><th>操作</th></tr></thead><tbody id="storeTableBody"></tbody></table>
+      <button class="btn-add" onclick="addStoreModal()">＋ 新しい店舗を追加</button>
+    </div>
+  </div>
+
+  <!-- カテゴリ管理 -->
+  <div class="admin-panel" id="panel_categories">
+    <div class="panel-fixed">
+      <div class="save-bar">
+        <button class="btn-save" onclick="saveCategoriesUI()">💾 カテゴリを保存</button>
+        <span class="unsaved-warning" id="categoriesUnsaved" style="display:none">⚠ 保存されていません</span>
+      </div>
+      <p style="font-size:12px;color:var(--text-sub);margin-bottom:2px">※カテゴリの追加・並び替え・削除ができます。</p>
+    </div>
+    <div class="panel-scroll">
+      <div id="categoryListContainer" style="display:flex;flex-direction:column;gap:8px;max-width:400px;margin-bottom:12px"></div>
+      <button class="btn-add" onclick="addCategoryLocal()">＋ 新しいカテゴリを追加</button>
+    </div>
+  </div>
+
+  <!-- 商品マスター -->
+  <div class="admin-panel" id="panel_items">
+    <div class="panel-fixed">
+      <div class="save-bar">
+        <button class="btn-save" onclick="saveItems()">💾 保存</button>
+        <span class="unsaved-warning" id="itemsUnsaved" style="display:none">⚠ 保存されていません</span>
+      </div>
+      <div style="margin-bottom:6px">
+        <select id="adminStoreSelect" onchange="adminStoreChange()" style="width:100%;padding:8px 10px;border:2px solid var(--border);border-radius:var(--radius-sm);font-size:14px;font-family:inherit"></select>
+      </div>
+    </div>
+    <div class="panel-scroll">
+      <div class="cat-columns" id="itemCatColumns"></div>
+    </div>
+  </div>
+
+  <!-- デフォルト設定 -->
+  <div class="admin-panel" id="panel_defaults">
+    <div class="panel-fixed">
+      <div class="save-bar">
+        <button class="btn-save" onclick="saveDefaults()">💾 保存（全店舗に反映）</button>
+        <span class="unsaved-warning" id="defaultsUnsaved" style="display:none">⚠ 保存されていません</span>
+      </div>
+      <p style="font-size:12px;color:var(--text-sub);margin-bottom:2px">新しく追加した商品は、保存時に全店舗にも追加されます。</p>
+    </div>
+    <div class="panel-scroll">
+      <div class="cat-columns" id="defCatColumns"></div>
+    </div>
+  </div>
+
+  <!-- 通知設定 -->
+  <div class="admin-panel" id="panel_notify">
+    <div class="panel-fixed">
+      <div class="save-bar">
+        <button class="btn-save" onclick="saveNotify()">💾 全店舗の通知設定を保存</button>
+        <span class="unsaved-warning" id="notifyUnsaved" style="display:none">⚠ 保存されていません</span>
+      </div>
+      <select id="notifyStoreJump" onchange="notifyStoreJump()" style="width:100%;padding:8px 10px;border:2px solid var(--border);border-radius:var(--radius-sm);font-size:14px;font-family:inherit"></select>
+    </div>
+    <div class="panel-scroll">
+      <div id="notifyContainer"></div>
+    </div>
+  </div>
+
+  <!-- その他 -->
+  <div class="admin-panel" id="panel_others">
+    <div class="panel-fixed">
+      <h3 style="margin:0">⚙️ その他</h3>
+    </div>
+    <div class="panel-scroll">
+      <div style="padding:16px 0;display:flex;flex-direction:column;gap:16px">
+        <!-- CSV出力 -->
+        <div style="background:#f8fafc;border:1px solid var(--border);border-radius:var(--radius-sm);padding:16px">
+          <div style="font-weight:700;font-size:14px;margin-bottom:6px">📥 在庫CSV出力</div>
+          <p style="font-size:12px;color:var(--text-sub);margin:0 0 12px">全店舗・全商品の在庫数を CSV ファイルとしてダウンロードします。<br>（商品名・店舗名・在庫数の3列）</p>
+          <button id="btnExportCsv" onclick="downloadInventoryCSV()" style="padding:10px 20px;background:#0f766e;color:#fff;border:none;border-radius:var(--radius-sm);font-size:14px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:6px;">📥 在庫CSV出力</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<?!= include('script') ?>
+</body>
+</html>
